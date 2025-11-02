@@ -9,7 +9,7 @@ AIによる再評価の結果に基づき、テクニカル指標の計算で用
 ```plantuml
 @startuml
 !theme vibrant
-
+skinparam linetype ortho
 actor ユーザー
 
 package "フロントエンド" {
@@ -36,10 +36,7 @@ package "バックエンド (Python)" {
   }
 
   package "データ & 状態" {
-    database "データベース (SQLite)" as DB {
-      collections "投資判断" as Judgements
-      collections "チューニングパラメータ" as Params
-    }
+    database "データベース (PostgreSQL)" as DB
     database "ファイルシステム" as FS {
       collections "tickers.csv"
     }
@@ -54,32 +51,32 @@ package "外部サービス" {
 }
 
 ' --- 接続 ---
-ユーザー --> Frontend: ブラウザで操作
-Frontend --> FastAPI: APIリクエスト (HTTP/JSON)
+ユーザー ----> Frontend: ブラウザで操作
+Frontend ----> FastAPI: APIリクエスト (HTTP/JSON)
 
 FastAPI --> ResultRouter
 FastAPI --> GraphRouter
 
-Scheduler --> AnalysisLogic: 定時分析を実行
-Scheduler --> ReEvalLogic: 再評価をトリガー
+Scheduler ----> AnalysisLogic: 定時分析を実行
+Scheduler ----> ReEvalLogic: 再評価をトリガー
 
-AnalysisLogic --> YFinance: 株価データ取得
-AnalysisLogic --> NewsAPI: 最新ニュース取得
-AnalysisLogic --> MailService: 通知メール送信
-AnalysisLogic --> DB: チューニングパラメータ読込
-AnalysisLogic --> AIService: 投資判断理由を取得
-AnalysisLogic --> DB: 新規投資判断を保存
+AnalysisLogic ----> YFinance: 株価データ取得
+AnalysisLogic ----> NewsAPI: 最新ニュース取得
+AnalysisLogic ----> MailService: 通知メール送信
+AnalysisLogic ----> DB: チューニングパラメータ読込
+AnalysisLogic ----> AIService: 投資判断理由を取得
+AnalysisLogic ----> DB: 新規投資判断を保存
 
-GraphRouter --> ChartLogic
-ChartLogic --> YFinance: 価格履歴を取得
-ChartLogic --> DB: 投資判断履歴を取得
+GraphRouter ----> ChartLogic
+ChartLogic ----> YFinance: 価格履歴を取得
+ChartLogic ----> DB: 投資判断履歴を取得
 
-ReEvalLogic --> DB: 過去の投資判断を読込
-ReEvalLogic --> YFinance: 現在価格を取得
-ReEvalLogic --> AIService: 再評価を取得
-ReEvalLogic --> DB: チューニングパラメータを更新
+ReEvalLogic ----> DB: 過去の投資判断を読込
+ReEvalLogic ----> YFinance: 現在価格を取得
+ReEvalLogic ----> AIService: 再評価を取得
+ReEvalLogic ----> DB: チューニングパラメータを更新
 
-AIService --> GenAI: API呼び出し
+AIService ----> GenAI: API呼び出し
 
 @enduml
 ```
