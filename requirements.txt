@@ -2,4 +2,6 @@ pandas
 yfinance
 fastapi
 uvicorn[standard]
-pandas-ta
+pandas_ta
+SQLAlchemy
+psycopg2-binary

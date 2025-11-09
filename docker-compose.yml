@@ -9,6 +9,7 @@ services:
       - "8000:8000"
     volumes:
       - ./src:/app/src
+      - ./data/logs:/app/data/logs # Add this line for log persistence
     depends_on:
       - db
     environment:

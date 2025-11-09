@@ -205,3 +205,123 @@ Frontend -> ユーザー: インタラクティブなグラフを表示
 deactivate Frontend
 @enduml
 ```
+
+### 3.4. シーケンス: データベースアクセス詳細
+
+APIがリクエストを受け取ってから、データベースを操作して分析を実行し、結果を保存するまでの一連の流れを以下に示します。
+
+```plantuml
+@startuml
+!theme vibrant
+autonumber
+
+participant "FastAPI Router" as Router
+participant "Dependency (get_db)" as Dep
+participant "Analysis Logic" as Logic
+database "PostgreSQL" as DB
+
+Router -> Dep: get_db()
+activate Dep
+Dep -> DB: Create Session
+activate DB
+DB --> Dep: DB Session
+deactivate DB
+Dep --> Router: DB Session
+deactivate Dep
+
+Router -> Logic: run_analysis_task(db_session)
+activate Logic
+
+Logic -> DB: SELECT * FROM tuning_parameters
+activate DB
+DB --> Logic: Tuning Parameters
+deactivate DB
+
+Logic -> Logic: ...株価データ取得と分析実行...
+
+Logic -> DB: INSERT INTO analysis_results (...)
+activate DB
+DB --> Logic: Commit OK
+deactivate DB
+
+Logic --> Router: Task Finished
+deactivate Logic
+
+Router -> Dep: close_db_session()
+activate Dep
+Dep -> DB: Close Session
+activate DB
+deactivate DB
+deactivate Dep
+
+@enduml
+```
+
+## 4. データベース設計 (ER図)
+
+`tuning_parameters`、`analysis_runs`、`analysis_results`の各テーブル構成を以下に示します。
+
+```plantuml
+@startuml
+!theme vibrant
+hide circle
+skinparam linetype ortho
+
+entity "tuning_parameters" as TP {
+  + id [PK]: INTEGER
+  --
+  * date: DATE
+  * name: VARCHAR
+  * value: FLOAT
+  description: VARCHAR
+  created_at: DATETIME
+  updated_at: DATETIME
+  --
+  UniqueConstraint(date, name)
+}
+
+entity "analysis_runs" as Run {
+  + id [PK]: INTEGER
+  --
+  * analyzed_at: DATETIME
+  parameters_used: JSON
+}
+
+entity "analysis_results" as Result {
+  + id [PK]: INTEGER
+  --
+  * analysis_run_id [FK]: INTEGER
+  * ticker: VARCHAR
+  price: FLOAT
+  rsi: FLOAT
+  deviation_rate_25: FLOAT
+  trend: VARCHAR
+  macd_line: FLOAT
+  macd_signal: FLOAT
+  dmi_dmp: FLOAT
+  dmi_dmn: FLOAT
+  adx: FLOAT
+  volume: FLOAT
+  signals: JSON
+  buy_score: INTEGER
+  short_score: INTEGER
+}
+
+Run ||--o{ Result : "has many"
+
+@enduml
+```
+
+### テーブルの説明
+
+-   **`tuning_parameters`**:
+    *   **役割**: テクニカル分析で使用される各種パラメータ（RSIの期間、移動平均線の閾値など）を格納します。
+    *   **特徴**: パラメータは日付ごとにバージョン管理され、分析実行時には最新の日付のパラメータセットが使用されます。これにより、パラメータの動的な調整と履歴管理が可能になります。
+
+-   **`analysis_runs`**:
+    *   **役割**: 個々の分析実行のメタデータ（いつ実行されたか、どのパラメータセットが使用されたかなど）を記録します。
+    *   **特徴**: 各分析実行は一意のIDを持ち、その実行で使用された`tuning_parameters`のスナップショットが`parameters_used`カラムにJSON形式で保存されます。
+
+-   **`analysis_results`**:
+    *   **役割**: 各銘柄の具体的な分析結果（株価、テクニカル指標の値、シグナル、スコアなど）を格納します。
+    *   **特徴**: `analysis_run_id`を通じて`analysis_runs`テーブルに紐付けられ、どの分析実行の結果であるかを識別できます。これにより、`parameters_used`の重複を避け、データベースの正規化が実現されています。

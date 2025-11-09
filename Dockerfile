@@ -1,8 +1,11 @@
 # Python base image
-FROM python:3.9-slim
+FROM python:3.12-slim
 
 # Set the working directory in the container
 WORKDIR /app
+
+# Create logs directory
+RUN mkdir -p data/logs
 
 # Copy the requirements file and install dependencies
 COPY requirements.txt .

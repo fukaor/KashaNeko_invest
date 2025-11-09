@@ -1,66 +1,70 @@
-import os
-import json
 import logging
-from datetime import datetime
+from sqlalchemy.orm import Session
 
 from .getTickersData import get_tickers_data
-from .output import filter_and_enrich_data
-from ..models.analysis import AnalysisFilter
+from ..models.db_models import AnalysisResult, AnalysisRun
 
-def save_data_to_json(data: dict, file_prefix: str) -> str:
-    """辞書データをタイムスタンプ付きのJSONファイルに保存します。
-
-    Args:
-        data (dict): 保存するデータを含む辞書。
-        file_prefix (str): ファイル名の接頭辞（例: "raw_analysis"）。
-
-    Returns:
-        str: 保存されたファイルのパス。
-
-    Raises:
-        IOError: ファイルの書き込みに失敗した場合。
-    """
-    results_dir = 'data/results'
-    if not os.path.exists(results_dir):
-        os.makedirs(results_dir)
-    
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    file_path = os.path.join(results_dir, f"{file_prefix}_{timestamp}.json")
-    
+def save_results_to_db(db: Session, results: dict, params: dict):
+    """分析結果をデータベースに保存します。"""
+    logging.info(f"Saving {len(results)} analysis results to the database...")
     try:
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-        logging.info(f"Successfully saved data to {file_path}")
-        return file_path
-    except IOError as e:
-        logging.error(f"Failed to write to file {file_path}: {e}")
+        # 1. 分析実行の記録を作成
+        analysis_run = AnalysisRun(parameters_used=params)
+        db.add(analysis_run)
+        db.flush() # run.id を確定させる
+
+        # 2. 各銘柄の分析結果を、上記の実行記録に紐づけて保存
+        for ticker, data in results.items():
+            result = AnalysisResult(
+                analysis_run_id=analysis_run.id,
+                ticker=data["ticker"],
+                price=float(data["price"]),
+                rsi=float(data["rsi"]),
+                deviation_rate_25=float(data["deviation_rate_25"]),
+                trend=data["trend"],
+                macd_line=float(data["MACD"]["line"]),
+                macd_signal=float(data["MACD"]["signal"]),
+                dmi_dmp=float(data["DMI"]["dmp"]),
+                dmi_dmn=float(data["DMI"]["dmn"]),
+                adx=float(data["ADX"]),
+                volume=int(data["Volume"]),
+                signals=data["signals"],
+                buy_score=int(data["buy_score"]),
+                short_score=int(data["short_score"]),
+            )
+            db.add(result)
+        
+        db.commit()
+        logging.info(f"Successfully saved analysis run {analysis_run.id} and {len(results)} results to the database.")
+    except Exception as e:
+        db.rollback()
+        logging.error(f"Failed to save analysis results to database: {e}")
         raise
 
-def run_analysis_task(filters: AnalysisFilter):
+def run_analysis_task(db: Session):
     """株価分析のコアタスクを（バックグラウンドで）実行します。
 
-    データの取得、分析、フィルタリング、保存までの一連の処理を担当します。
+    データの取得、分析、DBへの保存までの一連の処理を担当します。
 
     Args:
-        filters (AnalysisFilter): フィルタリング条件を定義したPydanticモデル。
+        db (Session): データベースセッション。
     """
     logging.info("Starting stock analysis task...")
     
-    raw_data = get_tickers_data()
-    if not raw_data:
-        logging.error("Failed to get tickers data. Aborting task.")
-        return
-    save_data_to_json(raw_data, "raw_analysis")
-
-    enriched_data = filter_and_enrich_data(
-        data=raw_data,
-        rsi_decision=filters.rsi_decision,
-        deviation_25_decision=filters.deviation_25_decision,
-        sma_75_decision=filters.sma_75_decision
-    )
-    if not enriched_data:
-        logging.warning("No data matched the filter criteria.")
-    else:
-        save_data_to_json(enriched_data, "enriched_output")
-    
-    logging.info("Stock analysis task finished.")
+    try:
+        raw_data = get_tickers_data(db=db)
+        if not raw_data:
+            logging.error("Failed to get tickers data. Aborting task.")
+            return
+        
+        # パラメータは全結果で共通なので、最初の一つから取り出す
+        params_used = next(iter(raw_data.values()))['parameters_used']
+        
+        # データベースに保存
+        save_results_to_db(db, raw_data, params_used)
+        
+        logging.info("Stock analysis task finished successfully.")
+    except Exception as e:
+        logging.error(f"An error occurred during the analysis task: {e}", exc_info=True)
+    finally:
+        db.close() # バックグラウンドタスクではセッションを明示的にクローズする

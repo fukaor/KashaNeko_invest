@@ -13,3 +13,8 @@ class AnalysisResponse(BaseModel):
     raw_data_path: Optional[str] = None
     enriched_data_path: Optional[str] = None
     analysis_results: Optional[List[Any]] = None
+
+class StockSummaryResponse(BaseModel):
+    """トップ銘柄サマリーAPIのレスポンスモデル。"""
+    top_buys: List[Any]
+    top_shorts: List[Any]
